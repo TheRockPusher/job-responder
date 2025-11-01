@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import ConversationItem from './ConversationItem'
-import { fetchConversations } from '@/lib/api/chat-client'
+import { fetchConversations } from '@/lib/api/chat-client-n8n'
 import type { Conversation } from '@/lib/types/chat'
 
 interface ConversationListProps {
