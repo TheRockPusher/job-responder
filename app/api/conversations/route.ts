@@ -25,7 +25,15 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    return NextResponse.json({ conversations })
+    // Trim session_ids to remove trailing newlines from N8N
+    const cleanedConversations = conversations?.map(conv => ({
+      ...conv,
+      session_id: conv.session_id.trim()
+    })) || []
+
+    console.log('📋 Returning', cleanedConversations.length, 'conversations (session_ids trimmed)')
+
+    return NextResponse.json({ conversations: cleanedConversations })
   } catch (error: any) {
     console.error('Conversations API error:', error)
     return NextResponse.json(
