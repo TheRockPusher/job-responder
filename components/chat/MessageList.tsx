@@ -54,6 +54,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
               type={message.type}
               timestamp={message.timestamp}
               isStreaming={message.isStreaming}
+              files={message.files}
             />
           ))}
           {isLoading && (

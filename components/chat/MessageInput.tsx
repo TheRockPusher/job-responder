@@ -1,21 +1,46 @@
 'use client'
 
 import { useState, useRef, KeyboardEvent } from 'react'
+import FileAttachment from './FileAttachment'
+import type { AttachedFile, FileWithStatus } from '@/lib/types/chat'
 
 interface MessageInputProps {
-  onSend: (message: string) => void
+  onSend: (message: string, files?: AttachedFile[]) => void
   disabled?: boolean
 }
 
 export default function MessageInput({ onSend, disabled }: MessageInputProps) {
   const [input, setInput] = useState('')
+  const [filesWithStatus, setFilesWithStatus] = useState<FileWithStatus[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (input.trim() && !disabled) {
-      onSend(input.trim())
+
+    // Check if we have any content to send (text or files)
+    const hasText = input.trim().length > 0
+    const hasReadyFiles = filesWithStatus.some(f => f.status === 'ready')
+
+    if (!hasText && !hasReadyFiles) {
+      return
+    }
+
+    // Check if any files are still processing
+    const isProcessing = filesWithStatus.some(f => f.status === 'processing')
+    if (isProcessing) {
+      alert('Please wait for files to finish processing')
+      return
+    }
+
+    // Get only successfully processed files
+    const attachedFiles = filesWithStatus
+      .filter(f => f.status === 'ready' && f.processed)
+      .map(f => f.processed!)
+
+    if (!disabled) {
+      onSend(input.trim() || 'Attached files', attachedFiles.length > 0 ? attachedFiles : undefined)
       setInput('')
+      setFilesWithStatus([])
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -38,8 +63,22 @@ export default function MessageInput({ onSend, disabled }: MessageInputProps) {
     }
   }
 
+  // Check if send button should be enabled
+  const canSend = (input.trim().length > 0 || filesWithStatus.some(f => f.status === 'ready')) &&
+                  !disabled &&
+                  !filesWithStatus.some(f => f.status === 'processing')
+
   return (
     <form onSubmit={handleSubmit} className="border-t border-dark-border bg-dark-surface p-4">
+      {/* File Attachment Zone */}
+      <div className="mb-3">
+        <FileAttachment
+          onFilesChange={setFilesWithStatus}
+          disabled={disabled}
+        />
+      </div>
+
+      {/* Text Input and Send Button */}
       <div className="flex items-end gap-2">
         <textarea
           ref={textareaRef}
@@ -53,7 +92,7 @@ export default function MessageInput({ onSend, disabled }: MessageInputProps) {
         />
         <button
           type="submit"
-          disabled={!input.trim() || disabled}
+          disabled={!canSend}
           className="bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
         >
           <svg

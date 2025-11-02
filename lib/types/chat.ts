@@ -4,6 +4,7 @@ export interface Message {
   type: 'human' | 'ai'
   timestamp: string
   isStreaming?: boolean
+  files?: FileMetadata[]
 }
 
 export interface Conversation {
@@ -21,10 +22,35 @@ export interface ChatRequest {
   user_id: string
   request_id: string
   session_id: string
+  files?: AttachedFile[]
 }
 
 export interface StreamEvent {
   text?: string
   session_id?: string
   conversation_title?: string
+}
+
+export interface AttachedFile {
+  name: string
+  type: string
+  size: number
+  content: string
+  encoding: 'text'
+}
+
+export interface FileMetadata {
+  name: string
+  type: string
+  size: number
+}
+
+export type FileProcessingStatus = 'pending' | 'processing' | 'ready' | 'error'
+
+export interface FileWithStatus {
+  id: string
+  file: File
+  status: FileProcessingStatus
+  error?: string
+  processed?: AttachedFile
 }

@@ -7,17 +7,20 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const supabase = await createClient()
     const {
-      data: { user },
+      data: { session },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getSession()
 
-    if (authError || !user) {
+    if (authError || !session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const user = session.user
+    const accessToken = session.access_token
+
     // Parse request body
     const body = await request.json()
-    const { query, request_id, session_id } = body
+    const { query, request_id, session_id, files } = body
 
     if (!query || !request_id) {
       return NextResponse.json(
@@ -26,20 +29,69 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate files if present
+    if (files && Array.isArray(files)) {
+      // Server-side validation
+      const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+      const MAX_FILES = 5
+      const MAX_TOTAL_SIZE = 10 * 1024 * 1024 // 10MB
+
+      if (files.length > MAX_FILES) {
+        return NextResponse.json(
+          { error: `Maximum ${MAX_FILES} files allowed` },
+          { status: 400 }
+        )
+      }
+
+      // Validate each file
+      for (const file of files) {
+        if (!file.name || !file.type || !file.size || !file.content) {
+          return NextResponse.json(
+            { error: 'Invalid file format' },
+            { status: 400 }
+          )
+        }
+
+        if (file.size > MAX_FILE_SIZE) {
+          return NextResponse.json(
+            { error: `File ${file.name} exceeds size limit` },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Validate total size
+      const totalSize = files.reduce((sum: number, f: any) => sum + f.size, 0)
+      if (totalSize > MAX_TOTAL_SIZE) {
+        return NextResponse.json(
+          { error: 'Total file size exceeds limit' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Forward request to N8N webhook
     const n8nWebhookUrl = API_CONFIG.n8n.webhookUrl
-    console.log('📤 Sending to N8N:', { query, user_id: user.id, request_id, session_id })
+    console.log('📤 Sending to N8N:', {
+      query,
+      user_id: user.id,
+      request_id,
+      session_id,
+      filesCount: files?.length || 0
+    })
 
     const n8nResponse = await fetch(n8nWebhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         query,
         user_id: user.id,
         request_id,
         session_id: session_id || '',
+        files: files || [],
       }),
     })
 
@@ -52,66 +104,13 @@ export async function POST(request: NextRequest) {
     const n8nData = await n8nResponse.json()
     console.log('📥 N8N response:', n8nData)
 
-    // Save conversation and messages to database
+    // N8N handles all database operations (conversations and messages)
+    // No database operations needed here - just return the response
+
     // Trim session_id to remove any whitespace/newlines from N8N
     const finalSessionId = (n8nData.session_id || session_id || '').trim()
 
-    if (finalSessionId) {
-      try {
-        // Create or update conversation
-        const { error: convError } = await supabase
-          .from('conversations')
-          .upsert({
-            session_id: finalSessionId,
-            user_id: user.id,
-            title: n8nData.title || 'New Conversation',
-            last_message_at: new Date().toISOString(),
-          })
-
-        if (convError) {
-          console.error('Error saving conversation:', convError)
-        }
-
-        // Save user message
-        const { error: userMsgError } = await supabase
-          .from('messages')
-          .insert({
-            session_id: finalSessionId,
-            message: {
-              content: query,
-              type: 'human',
-            },
-            created_at: new Date().toISOString(),
-          })
-
-        if (userMsgError) {
-          console.error('Error saving user message:', userMsgError)
-        }
-
-        // Save AI response
-        if (n8nData.Output) {
-          const { error: aiMsgError } = await supabase
-            .from('messages')
-            .insert({
-              session_id: finalSessionId,
-              message: {
-                content: n8nData.Output,
-                type: 'ai',
-              },
-              created_at: new Date().toISOString(),
-            })
-
-          if (aiMsgError) {
-            console.error('Error saving AI message:', aiMsgError)
-          }
-        }
-
-        console.log('✅ Messages saved to database')
-      } catch (dbError) {
-        console.error('Database error:', dbError)
-        // Continue even if database save fails
-      }
-    }
+    console.log('✅ N8N handled database operations')
 
     // Return the response with trimmed session_id
     return NextResponse.json({

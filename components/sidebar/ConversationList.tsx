@@ -28,10 +28,11 @@ export default function ConversationList({
     try {
       setIsLoading(true)
       const data = await fetchConversations()
+      console.log('📋 Loaded conversations:', data.length, 'conversations')
       setConversations(data)
       setError(null)
     } catch (err: any) {
-      console.error('Failed to load conversations:', err)
+      console.error('❌ Failed to load conversations:', err)
       setError('Failed to load conversations')
     } finally {
       setIsLoading(false)
