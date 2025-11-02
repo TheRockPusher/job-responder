@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import MessageList from './MessageList'
 import MessageInput from './MessageInput'
 import { sendMessage, fetchMessages } from '@/lib/api/chat-client-n8n'
-import type { Message } from '@/lib/types/chat'
+import type { Message, AttachedFile, FileMetadata } from '@/lib/types/chat'
 
 interface ChatInterfaceProps {
   sessionId: string | null
@@ -18,48 +18,78 @@ export default function ChatInterface({
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isNewConversation, setIsNewConversation] = useState(false)
 
   // Load messages when session changes
   useEffect(() => {
     if (sessionId) {
-      loadMessages(sessionId)
+      // Only load from database if we're switching to an existing conversation
+      // Don't reload if this is a conversation we just created
+      if (!isNewConversation) {
+        loadMessages(sessionId)
+      } else {
+        // Reset the flag after we've skipped the initial load
+        setIsNewConversation(false)
+      }
     } else {
       setMessages([])
+      setIsNewConversation(false)
     }
-  }, [sessionId])
+  }, [sessionId, isNewConversation])
 
   const loadMessages = async (id: string) => {
     try {
       const dbMessages = await fetchMessages(id)
-      const formattedMessages: Message[] = dbMessages.map((msg: any) => ({
-        id: msg.id,
-        content: msg.message.content,
-        type: msg.message.type,
-        timestamp: msg.created_at,
-      }))
+      const formattedMessages: Message[] = dbMessages.map((msg: any) => {
+        // Parse file metadata from message_data if present
+        let files: FileMetadata[] | undefined = undefined
+        if (msg.message_data) {
+          try {
+            const parsedData = typeof msg.message_data === 'string'
+              ? JSON.parse(msg.message_data)
+              : msg.message_data
+            files = parsedData.files
+          } catch (e) {
+            console.error('Failed to parse message_data:', e)
+          }
+        }
+
+        return {
+          id: msg.id,
+          content: msg.message.content,
+          type: msg.message.type,
+          timestamp: msg.created_at,
+          files,
+        }
+      })
       setMessages(formattedMessages)
+      setError(null)
     } catch (err: any) {
       console.error('Failed to load messages:', err)
-      // If conversation not found (404), just start with empty messages
-      // This happens when database tables aren't set up yet
-      if (err.message === 'Failed to fetch messages') {
-        setMessages([])
-      } else {
-        setError('Failed to load conversation history')
-      }
+      // Don't clear existing messages on error - just show error state
+      // This prevents messages from disappearing if there's a temporary network issue
+      setError('Failed to load conversation history. Showing cached messages.')
     }
   }
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, files?: AttachedFile[]) => {
       setIsLoading(true)
       setError(null)
+
+      // Prepare file metadata for display
+      const fileMetadata: FileMetadata[] | undefined = files?.map(f => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+      }))
 
       // Add user message immediately
       const userMessage: Message = {
         content,
         type: 'human',
         timestamp: new Date().toISOString(),
+        files: fileMetadata,
       }
       setMessages((prev) => [...prev, userMessage])
 
@@ -68,10 +98,10 @@ export default function ChatInterface({
       let aiContent = ''
 
       try {
-        console.log('🎯 Sending message:', content)
+        console.log('🎯 Sending message:', content, 'with', files?.length || 0, 'files')
 
         // Send message to N8N (single response, not streaming)
-        const response = await sendMessage(content, sessionId || '')
+        const response = await sendMessage(content, sessionId || '', files)
 
         console.log('✅ Received response:', response)
 
@@ -84,9 +114,30 @@ export default function ChatInterface({
 
         setMessages((prev) => [...prev, aiMessage])
 
-        // Update session ID and title if this was a new conversation
-        if (response.session_id) {
-          onSessionIdChange(response.session_id, response.title)
+        // Update session ID and title ONLY if this was actually a NEW conversation
+        // (i.e., we didn't have a sessionId before sending the message)
+        if (response.session_id && response.session_id.trim()) {
+          const returnedSessionId = response.session_id.trim()
+
+          // Check if this is actually a new conversation
+          if (!sessionId || sessionId === '') {
+            // This WAS a new conversation (we started with no sessionId)
+            console.log('🔄 New conversation created:', returnedSessionId)
+            setIsNewConversation(true)
+            onSessionIdChange(returnedSessionId, response.title)
+          } else if (sessionId.trim() === returnedSessionId) {
+            // Continuing existing conversation - don't trigger refresh
+            console.log('✅ Continuing existing conversation:', returnedSessionId)
+            // No need to call onSessionIdChange - we're already in this conversation
+          } else {
+            // Session ID changed unexpectedly - this shouldn't happen
+            console.warn('⚠️ Session ID mismatch:', {
+              current: sessionId,
+              returned: returnedSessionId
+            })
+            setIsNewConversation(true)
+            onSessionIdChange(returnedSessionId, response.title)
+          }
         }
       } catch (err: any) {
         console.error('Chat error:', err)
