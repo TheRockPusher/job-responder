@@ -9,7 +9,8 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json package-lock.json ./
-RUN npm ci --only=production --ignore-scripts && \
+# Install ALL dependencies (including devDependencies needed for build)
+RUN npm ci --ignore-scripts && \
     npm cache clean --force
 
 # Stage 2: Build the application
