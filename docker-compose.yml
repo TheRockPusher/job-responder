@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # IMPORTANT: NEXT_PUBLIC_* variables must be passed as build args
+      # because Next.js embeds them at build time
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_N8N_WEBHOOK_URL: ${NEXT_PUBLIC_N8N_WEBHOOK_URL}
+
+    image: job-responder-frontend:latest
+    container_name: job-responder-frontend
+
+    # Also set as runtime environment variables (for consistency)
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_N8N_WEBHOOK_URL=${NEXT_PUBLIC_N8N_WEBHOOK_URL}
+      - NODE_ENV=production
+
+    ports:
+      - "3000:3000"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+    # Optional: Add logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Networks section for future Caddy integration
+    # Uncomment when adding Caddy reverse proxy
+    # networks:
+    #   - web
+    #   - internal
+
+# Networks definition for future services
+# Uncomment when setting up Caddy reverse proxy
+# networks:
+#   web:
+#     external: true
+#   internal:
+#     external: false
+
+# Example for future services:
+#
+#   caddy:
+#     image: caddy:2-alpine
+#     container_name: caddy
+#     restart: unless-stopped
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - ./Caddyfile:/etc/caddy/Caddyfile
+#       - caddy_data:/data
+#       - caddy_config:/config
+#     networks:
+#       - web
+#       - internal
+#
+# volumes:
+#   caddy_data:
+#   caddy_config:

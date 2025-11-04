@@ -84,6 +84,170 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Docker Deployment
+
+The application is fully Dockerized for production deployment with multi-stage builds optimized for minimal image size (~80MB).
+
+### Prerequisites
+
+- Docker 20.10+ and Docker Compose 2.0+
+- Access to Supabase instance
+- N8N webhook endpoint
+
+### Quick Start with Docker
+
+1. **Create Environment File**
+
+   Copy the example environment file and configure your values:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` with your actual values:
+
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   NEXT_PUBLIC_N8N_WEBHOOK_URL=https://n8n.0123111.xyz/webhook/invoke_agent
+   ```
+
+   **⚠️ Important**: `NEXT_PUBLIC_*` variables are embedded at build time by Next.js. If you change these values, you must rebuild the image.
+
+2. **Build and Run**
+
+   ```bash
+   # Build and start the container
+   docker-compose up -d
+
+   # View logs
+   docker-compose logs -f frontend
+
+   # Stop the container
+   docker-compose down
+   ```
+
+3. **Access the Application**
+
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Docker Commands Reference
+
+```bash
+# Build only (without starting)
+docker-compose build
+
+# Rebuild without cache
+docker-compose build --no-cache
+
+# Start containers
+docker-compose up -d
+
+# Stop containers
+docker-compose down
+
+# View logs
+docker-compose logs -f frontend
+
+# Restart container
+docker-compose restart frontend
+
+# Check container health
+docker-compose ps
+
+# Execute command in running container
+docker-compose exec frontend sh
+```
+
+### Dockerfile Architecture
+
+The production Dockerfile uses a multi-stage build:
+
+1. **deps**: Install production dependencies only
+2. **builder**: Build Next.js application with standalone output
+3. **runner**: Minimal Alpine-based runtime (~80MB final image)
+
+Key features:
+- ✅ Multi-stage build for minimal image size
+- ✅ Node 18 Alpine Linux base
+- ✅ Non-root user (nextjs) for security
+- ✅ Standalone output mode (only necessary files)
+- ✅ Health check monitoring
+- ✅ Proper layer caching for fast rebuilds
+
+### Environment Variables
+
+**Build-time Variables** (embedded into build):
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_N8N_WEBHOOK_URL`
+
+These are passed as build args in `docker-compose.yml` and must be available during `docker-compose build`.
+
+**Runtime Variables**:
+- `NODE_ENV=production`
+- `PORT=3000`
+
+### Caddy Reverse Proxy Integration
+
+The application exposes port 3000 and is ready for Caddy reverse proxy integration.
+
+**Example Caddyfile:**
+
+```caddyfile
+yourdomain.com {
+    reverse_proxy frontend:3000
+    encode gzip
+
+    # Optional: Add security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+    }
+}
+```
+
+Uncomment the networks section in `docker-compose.yml` to enable Caddy integration.
+
+### Production Deployment Checklist
+
+- [ ] Configure environment variables in `.env`
+- [ ] Set up Supabase database (run `supabase/setup.sql`)
+- [ ] Configure OAuth redirect URLs in Supabase
+- [ ] Build Docker image: `docker-compose build`
+- [ ] Start container: `docker-compose up -d`
+- [ ] Verify health: `docker-compose ps`
+- [ ] Configure Caddy reverse proxy
+- [ ] Set up SSL certificates (automatic with Caddy)
+- [ ] Test authentication flow
+- [ ] Test chat with N8N integration
+- [ ] Remove debug endpoints (`/api/debug/*`) before production
+
+### Docker Troubleshooting
+
+**Build fails with "Cannot find module":**
+- Clear Docker cache: `docker-compose build --no-cache`
+- Verify `node_modules` is in `.dockerignore`
+
+**Environment variables not working:**
+- Rebuild image after changing `.env`: `docker-compose up -d --build`
+- Remember: `NEXT_PUBLIC_*` vars are embedded at build time
+
+**Port 3000 already in use:**
+- Change host port in `docker-compose.yml`: `"3001:3000"`
+- Or stop conflicting service: `lsof -ti:3000 | xargs kill`
+
+**Container keeps restarting:**
+- Check logs: `docker-compose logs frontend`
+- Verify Supabase credentials are correct
+- Ensure N8N webhook URL is accessible
+
+**Image size too large:**
+- Verify `.dockerignore` includes `node_modules` and `.next`
+- Expected final image size: ~80-100MB with standalone output
+
 ## Project Structure
 
 ```
