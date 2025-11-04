@@ -1,8 +1,9 @@
 # Multi-stage Dockerfile for Next.js 16 Production Deployment
-# Optimized for minimal image size (~80MB) with standalone output
+# Optimized for minimal image size with standalone output
+# Using Node.js 22 LTS (zero reported CVEs)
 
 # Stage 1: Install dependencies only when needed
-FROM node:18-alpine AS deps
+FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -12,7 +13,7 @@ RUN npm ci --only=production --ignore-scripts && \
     npm cache clean --force
 
 # Stage 2: Build the application
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy dependencies from deps stage
@@ -36,7 +37,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Stage 3: Production runtime
-FROM node:18-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
